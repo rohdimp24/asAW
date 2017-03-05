@@ -1,8 +1,6 @@
 '''
-This code will interface with the postgres database to read the raw cases and then write back the normalized cases to the db
-
-the user need to specify which equipment typ cases are getting normalize.
-
+This code will find out the Ngrams for all the cases and store those Ngrams as a statement in the database
+These Ngram statements will then be pulled from the DB and then analyzed for the chi-square association.
 '''
 from nltk.util import bigrams
 import re
@@ -10,6 +8,9 @@ import json
 import mysql.connector
 
 
+'''
+Fetch the WO from the DB
+'''
 def getWO(cnx):
     result = []
     try:
@@ -21,6 +22,9 @@ def getWO(cnx):
         cnx.close()
     return(result)
 
+'''
+Read the uigram & bigrams dictionaries
+'''
 def getIntiialize(conn):
     results=getWO(conn)
     lstWorkOrders=[]
@@ -46,6 +50,9 @@ def getIntiialize(conn):
 
     return (lstWorkOrders,lstUnigrams,lstBigrams)
 
+'''
+given the WO find the unigrams
+'''
 def findAllUnigramsOfWO(WO,lstUnigrams):
     #print(WO)
     arrUnigramWords = WO.split(" ")
@@ -59,6 +66,9 @@ def findAllUnigramsOfWO(WO,lstUnigrams):
 
     return(', '.join(lstFinal))
 
+'''
+given the WO find the bigrams
+'''
 def findAllBigramsofWO(WO,lstBigrams):
     bigrm = list(bigrams(WO.split()))
     # print(bigrm)
@@ -74,6 +84,9 @@ def findAllBigramsofWO(WO,lstBigrams):
 
     return (', '.join(lstFinal))
 
+'''
+for a WO find both the unograms and bigrams and store them as a normalized version of the WO
+'''
 def getNormalizedCases(cnx):
     lstWorkOrders, lstUnigrams, lstBigrams=getIntiialize(cnx)
     arrUnigramFiltered = {}
@@ -134,6 +147,7 @@ def getNormalizedCases(cnx):
 
 
 
+'''Main code '''
 #this is how you can connect to the mysql database
 cnx = mysql.connector.connect(user='root', password='root',host='localhost',database='assetanswers')
 #lstWorkOrders, lstUnigrams, lstBigrams=getIntiialize(cnx)
@@ -157,6 +171,9 @@ for woObj in output:
 
 
 
+
+
+'''''EXTRA'''
 
 '''It seems I am not able to run the update query ..so I will for now save the information to  file an then use PHP code to perform the update'''
 fp = open("/Users/305015992/pythonProjects/assetAnswer/ngramsWO.txt", "w")
