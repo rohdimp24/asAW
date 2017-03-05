@@ -24,15 +24,16 @@ import pandas as pd
 prefixpath="/Users/305015992/pythonProjects/assetAnswer/"
 
 
-arrPumpWords=[]
-
-assetWordsFile=prefixpath+"pumpKeywords1.csv"
-for dictLine in open(assetWordsFile):
-    print(dictLine)
-    dictLine=dictLine.replace('"','')
-    print(dictLine)
-    arrPumpWords=dictLine.split(",")
-    break
+#
+# arrPumpWords=[]
+#
+# assetWordsFile=prefixpath+"pumpKeywords1.csv"
+# for dictLine in open(assetWordsFile):
+#     print(dictLine)
+#     dictLine=dictLine.replace('"','')
+#     print(dictLine)
+#     arrPumpWords=dictLine.split(",")
+#     break
 
 
 #read the unigram file and create a dictioanry
@@ -261,6 +262,17 @@ for rr in result[1:100]:
 fp.write(json.dumps(outputResult))
 fp.close()
 
+
+
+'''
+SOme thoughts
+
+If we just create a frequency map of the various keywords that we are getting on mixer it gives a pretty good picture of
+what are the key issues that are going on....I think I will try to integrate the word cloud creation code so that generate
+the cloud for each equipment type
+
+
+'''
 
 
 
