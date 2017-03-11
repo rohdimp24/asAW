@@ -92,16 +92,21 @@ import mysql.connector
 '''
 Use the database to fetch the Workorders that you want to analyze. Currently they are based on the equipment type
 '''
-cnx = mysql.connector.connect(user='root', password='root',host='localhost',port='3306',database='assetanswers')
+def getData(equipmentType):
 
-result=[]
-try:
-   cursor = cnx.cursor()
-   cursor.execute("""SELECT DISTINCT(WH_ORIG_RQST_DESC_C) from workorders_assets where EQ_EQ_CLASS_C='Mixer'""")
-   result = cursor.fetchall()
-   print(result)
-finally:
-    cnx.close()
+    cnx = mysql.connector.connect(user='root', password='root',host='localhost',port='3306',database='assetanswers')
+
+    result=[]
+    try:
+       cursor = cnx.cursor()
+       sqlQuery="SELECT DISTINCT(WH_ORIG_RQST_DESC_C) from workorders_assets where EQ_EQ_CLASS_C='%s'" %(equipmentType)
+       cursor.execute(sqlQuery)
+       result = cursor.fetchall()
+       print(result)
+    finally:
+        cnx.close()
+
+        return(result)
 
 
 #checkWhichMatches not being used anymore
@@ -196,7 +201,66 @@ def getCleanedUpTextString(txt):
     return(original,finalString)
 
 
+def getTotalDistribution(ngramArray,finalCountDict):
+    for nn in ngramArray:
+        if nn[0] in countNgrams:
+            finalCountDict[nn[0]] += float(1)
+        else:
+            finalCountDict[nn[0]] = float(1)
 
+    return(finalCountDict)
+
+
+def drawFreqDistribution(sortedCountNGrams):
+    import numpy as np
+    import matplotlib.pyplot as plt
+    labelArr = []
+    freqArr = []
+
+    for obj in sortedCountNGrams[0:30]:
+        labelArr.append(obj[0])
+        freqArr.append(int(obj[1]))
+
+    N = len(labelArr)
+    ind = np.arange(N)  # the x locations for the groups
+    width = 0.50  # the width of the bars
+
+    fig, ax = plt.subplots()
+    winners = ax.barh(ind, freqArr, width, color='green')
+    ax.set_yticks(ind + width)
+    ax.set_yticklabels(labels=labelArr)
+
+
+'''
+We need to make sure that if the constituent words of bigram are present in unigram then unigram will be discarded
+similarly if the words in trigram are present in the unigram then they are to be removed
+also if bigram is a subset of trigram then it will not be counted
+
+'''
+# def findEffectiveNgrams(trigramArr,bigramArr,unigramArr):
+#     ##do something
+
+
+def findEffectiveBigrams(bigramArr,TrigramArr):
+    finalbb = []
+    for bb in bigramArr:
+        initList = set(bb[0].split(' '))
+        # print("bi:", initList)
+        flag = 1
+        for tt in TrigramArr:
+            trList = set(tt[0].split(' '))
+            # print("tri:", tt[0])
+            diffLst = (initList.difference(trList))
+            # print(diffLst, len(diffLst))
+            if (len(diffLst) == 0):
+                # print("sub:", bb)
+                flag = 0
+                # break
+                # print(bb[0])
+        if (flag == 1):
+            finalbb.append(bb)
+
+    return(finalbb)
 
 '''
 Main function:
@@ -205,44 +269,73 @@ find out the unigrams, bigrams,trigrams
 and store them into a file for further analysis
 
 '''
+
 import json
 fp = open(prefixpath+"cognitiveOutput.txt", "w")
 outputResult=[]
-
-for rr in result[1:100]:
+result=getData("Pump")
+#count the number of times each word has come...this way we can give a distribution and may be that is helpful
+countNgrams={}
+for rr in result:
     originalTxt, cleanedUpTxt=getCleanedUpTextString(rr[0])
 
     #stemming
    # stemmed = [stemmer.stem(ww) for ww in words]
    # stemmed=' '.join(stemmed)
-
-
-    #words=txt.split(" ")
-#    print(words)
-    #matchUni,unmatchUni=checkWhichMatches(words,arrPumpWords)
-
     #get the unigrams and choose the top 3
-    uniStr=getUnigramDistributionFromText(cleanedUpTxt)
-    # uniLen=len(uniStr)
-    # if(uniLen>5):
-    #     uniStr=uniStr[0:5]
+    unigramWords=[]
+    constituentNGramWords=[]
+
+    uniArr=getUnigramDistributionFromText(cleanedUpTxt)
+    print(uniArr)
+    for uu in uniArr:
+        unigramWords.append(uu[0])
+
+    #countNgrams=getTotalDistribution(uniArr,countNgrams)
 
     #get the bigrams and choose the top 3
-    biStr=getBigramsDistributionFromText(cleanedUpTxt)
-    biLen=len(biStr)
-    # if(biLen>5):
-    #     biStr=biStr[0:5]
-    #sorted(biStr.items(), key=lambda x: x[1], reverse=True)
+    biArr=getBigramsDistributionFromText(cleanedUpTxt)
+    biLen=len(biArr)
+    for bb in biArr:
+        # bigramWords.append(bb[0])
+        for word in bb[0].split(' '):
+            constituentNGramWords.append(word)
+
+
+    #countNgrams = getTotalDistribution(biArr, countNgrams)
 
     #get the trigrams and choose the top 3
-    triStr = getTrigramsDistributionFromText(cleanedUpTxt)
-    triLen = len(triStr)
-    if (triLen > 5):
-        triStr = triStr[0:5]
+    triArr = getTrigramsDistributionFromText(cleanedUpTxt)
+    triLen = len(triArr)
+    for tt in triArr:
+        # trigramWords.append(tt[0])
+        for word in tt[0].split(' '):
+            constituentNGramWords.append(word)
 
-    stringifiedTrigram = ', '.join(tt[0] for tt in triStr)
-    stringifiedBigram=', '.join(bb[0] for bb in biStr)
-    stringifiedUnigram=', '.join(uu[0] for uu in uniStr)
+
+    finalbb=findEffectiveBigrams(biArr,triArr)
+
+    countNgrams = getTotalDistribution(finalbb, countNgrams)
+    countNgrams = getTotalDistribution(triArr, countNgrams)
+
+    #before adding the number of unigrams we need to findout how many are not covered by the bigrams,trigrams
+    finUnigrams = list(set(unigramWords).difference(constituentNGramWords))
+    #now add these unigrams frequeccy
+    for uu in uniArr:
+        if uu[0] in finUnigrams:
+            if uu[0] in countNgrams:
+                countNgrams[uu[0]] += float(1)
+            else:
+                countNgrams[uu[0]] = float(1)
+
+    stringifiedTrigram = ', '.join(tt[0] for tt in triArr)
+    stringifiedBigram=', '.join(bb[0] for bb in finalbb)
+    stringifiedUnigram=', '.join(uu for uu in finUnigrams)
+
+
+    #effectiveNgrams=findEffectiveNgrams(triArr,biArr,uniArr)
+
+
 
     print(originalTxt, "....",stringifiedTrigram,"...",stringifiedBigram, "...", stringifiedUnigram)
     outputResult.append({"original":originalTxt,"trigrams":stringifiedTrigram,"bigrams":stringifiedBigram,"unigrams":stringifiedUnigram})
@@ -258,9 +351,29 @@ for rr in result[1:100]:
     #pp = pd.DataFrame(list(zip(unique, counts)), columns=['num of occurence', 'freq'])
 
     #print(original)
+sortedCountNGrams=sorted(countNgrams.items(), key=lambda x: x[1], reverse=True)
+print(sortedCountNGrams[0:50])
 
 fp.write(json.dumps(outputResult))
 fp.close()
+
+#print(sortedCountNGrams[0:100])
+drawFreqDistribution(sortedCountNGrams)
+
+
+# def autolabel(rects):
+#     # attach some text labels
+#     for rect in rects:
+#         height = rect.get_height()
+#         hcap = "$"+str(height)+"M"
+#         ax.text(rect.get_x()+rect.get_width()/2., height, hcap,ha='center', va='bottom', rotation="vertical")
+
+
+
+#autolabel(winners)
+
+
+
 
 
 
@@ -272,6 +385,9 @@ what are the key issues that are going on....I think I will try to integrate the
 the cloud for each equipment type
 
 
+
+
+We need to check whihc words are coming after not...they may be interesting
 '''
 
 
@@ -282,55 +398,78 @@ the cloud for each equipment type
 #result[1][0]
 
 
+#for rr in result[1:10]
 
-bigrm = list(bigrams(result[2][0].split()))
+originalTxt, cleanedUpTxt=getCleanedUpTextString(result[7][0])
 
-#print(bigrm)
-print(', '.join(' '.join((a, b)) for a, b in bigrm))
+unigramWords=[]
+bigramWords=[]
+trigramWords=[]
+countNgrams={}
 
+#get the unigrams and choose the top 3
+uniArr=getUnigramDistributionFromText(cleanedUpTxt)
+for uu in uniArr:
+    unigramWords.append(uu[0])
 
-print(dictBigrams)
-
-
-
-#print(arrPumpWords)
-
-#type(arrPumpWords)
-
-#stemmer.stem('inspection of the woks')
-
-originalTxt, cleanedUpTxt=getCleanedUpTextString(result[13][0])
+constituentUnigramsWords=[]
 
 
-tt=getTrigramsDistributionFromText(cleanedUpTxt)
+countNgrams = getTotalDistribution(uniArr, countNgrams)
 
-list(trigrams(cleanedUpTxt.split()))
-#stemming
-# stemmed = [stemmer.stem(ww) for ww in words]
-# stemmed=' '.join(stemmed)
+biArr=getBigramsDistributionFromText(cleanedUpTxt)
+for bb in biArr:
+    #bigramWords.append(bb[0])
+    for word in bb[0].split(' '):
+        constituentUnigramsWords.append(word)
+countNgrams = getTotalDistribution(biArr, countNgrams)
+
+triArr = getTrigramsDistributionFromText(cleanedUpTxt)
+for tt in triArr:
+    #trigramWords.append(tt[0])
+    for word in tt[0].split(' '):
+        constituentUnigramsWords.append(word)
+
+finalbb=[]
+for bb in biArr:
+    initList=set(bb[0].split(' '))
+    print("bi:",initList)
+    flag=1
+    for tt in triArr:
+        trList=set(tt[0].split(' '))
+        print("tri:",tt[0])
+        diffLst=(initList.difference(trList))
+        print(diffLst,len(diffLst))
+        if(len(diffLst)==0):
+            print("sub:",bb)
+            flag=0
+            #break
+        #print(bb[0])
+    if(flag==1):
+        finalbb.append(bb)
+
+print(triArr)
+print(finalbb)
 
 
+countNgrams = getTotalDistribution(triArr, countNgrams)
 
-#words=txt.split(" ")
-#    print(words)
-#matchUni,unmatchUni=checkWhichMatches(words,arrPumpWords)
+print(countNgrams)
+print(uniArr)
+print(constituentWords)
+print(set(constituentWords))
+print(set(unigramWords))
+#these are the final unigrams to be considered
+finUnigrams=list(set(unigramWords).difference(constituentWords))
+print(list(finUnigrams))
+print(biArr)
+print(triArr)
+for uu in uniArr:
+    if uu[0] in finUnigrams:
+        if uu[0] in countNgrams:
+            countNgrams[uu[0]] += float(1)
+        else:
+            countNgrams[uu[0]] = float(1)
 
-uniStr=getUnigramDistributionFromText(cleanedUpTxt)
-uniLen=len(uniStr)
-print(uniLen)
-if(uniLen>3):
-    uniStr=uniStr[0:3]
 
-print(uniStr)
-#get the bigrams
-biStr=getBigramsDistributionFromText(cleanedUpTxt)
-biLen=len(biStr)
-if(biLen>3):
-    biStr=biStr[0:2]
-#sorted(biStr.items(), key=lambda x: x[1], reverse=True)
-print(biStr[0][0])
-
-print(originalTxt, "....", uniStr, "...", biStr)
-    #pp = pd.DataFrame(list(zip(unique, counts)), columns=['n
-
-print(dictTrigrams)
+#getTotalDistribution(triArr, finalCountDict)
