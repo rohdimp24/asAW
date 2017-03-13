@@ -1,20 +1,15 @@
 '''
-THis script is to find out the various bigrams and trigrams that are present in the given WO.The idea is to find out if
-by looking at the various words we can figure out what could be the key issue or the item.
-If we apply the knowldege from association like which words have a close relation with conditions than the presence of
-that asset and condition might tell us that they are the main thigs.
+This script is to find out the issues disrtibution for a particular site and equipment.
+It takes as an input the unigram list, bigram list and trigram list
 '''
-from nltk.tokenize import WordPunctTokenizer
-from nltk.collocations import BigramCollocationFinder
-from nltk.collocations import TrigramCollocationFinder
-from nltk.metrics import TrigramAssocMeasures
-from nltk.metrics import BigramAssocMeasures
 import numpy as np
 from nltk.util import bigrams
 from nltk.util import trigrams
 import csv
 from nltk.corpus import stopwords
 import re
+import mysql.connector
+
 from nltk.stem.porter import PorterStemmer
 stemmer = PorterStemmer()
 
@@ -23,20 +18,11 @@ import pandas as pd
 
 prefixpath="/Users/305015992/pythonProjects/assetAnswer/"
 
+########## READ FILES TO CONFIGURE NGRAMS ###################
 
-#
-# arrPumpWords=[]
-#
-# assetWordsFile=prefixpath+"pumpKeywords1.csv"
-# for dictLine in open(assetWordsFile):
-#     print(dictLine)
-#     dictLine=dictLine.replace('"','')
-#     print(dictLine)
-#     arrPumpWords=dictLine.split(",")
-#     break
-
-
-#read the unigram file and create a dictioanry
+'''
+read the unigram file and create a dictioanry
+'''
 unigramFile=prefixpath+"unigramWO.csv"
 dictUnigrams={}
 for ll in open(unigramFile):
@@ -47,8 +33,27 @@ for ll in open(unigramFile):
 
 print(dictUnigrams)
 
+'''
+this is a list of unigrams which we feel that shoul dbe removed. like stop words but they are not actually stop words.
+We will make use of the list just before publishing the final words
+'''
+undesiredWordsFile=prefixpath+"UndesiredWords.csv"
+arrUndesiredWords=[]
+for ll in open(undesiredWordsFile):
+    #print(ll)
+    llArr=ll.split(",")
+    #print(llArr)
+    if(len(llArr)>1):
+        val=llArr[1].replace('\n','')
+        val=val.replace('"','')
+        print(val)
+        arrUndesiredWords.append(val)
 
-#read the bigrams with their frequecny
+print(arrUndesiredWords)
+
+'''
+read the bigrams with their frequecny
+'''
 bigramFile=prefixpath+"bigrams.csv"
 dictBigrams={}
 for ll in open(bigramFile):
@@ -60,7 +65,9 @@ for ll in open(bigramFile):
 print(dictBigrams)
 
 
-#read the trigrams with their frequecy
+'''
+read the trigrams with their frequecy
+'''
 trigramFile=prefixpath+"trigramsWO.csv"
 dictTrigrams={}
 for ll in open(trigramFile):
@@ -71,35 +78,39 @@ for ll in open(trigramFile):
 
 print(dictTrigrams)
 
-
-
-
-#read the stopwrods
+'''
+read the stopwrods
+'''
 stopwordsFile=prefixpath+"WOStopwords.csv"
 arrStopwords=[]
 for ll in open(stopwordsFile):
-    llArr=ll.split(",")
-    val=llArr[1].replace('\n','')
-    val=val.replace('"','')
-    arrStopwords.append(val)
+    # print(ll)
+    llArr = ll.split(",")
+    # print(llArr)
+    if (len(llArr) > 1):
+        val = llArr[1].replace('\n', '')
+        val = val.replace('"', '')
+        print(val)
+        arrStopwords.append(val)
 
 print(arrStopwords)
 stops=set(arrStopwords)
 print(stops)
 
-import mysql.connector
 
 '''
-Use the database to fetch the Workorders that you want to analyze. Currently they are based on the equipment type
+getData: Use the database to fetch the Workorders that you want to analyze. Currently they are based on the equipment type and the site
 '''
-def getData(equipmentType):
+def getData(equipmentType,siteName):
 
     cnx = mysql.connector.connect(user='root', password='root',host='localhost',port='3306',database='assetanswers')
 
     result=[]
     try:
        cursor = cnx.cursor()
-       sqlQuery="SELECT DISTINCT(WH_ORIG_RQST_DESC_C) from workorders_assets where EQ_EQ_CLASS_C='%s'" %(equipmentType)
+       sqlQuery="SELECT Distinct(WH_ORIG_RQST_DESC_C) from workorders_assets where EQ_EQ_CLASS_C='%s' and WH_SITE_C='%s'" \
+                %(equipmentType,siteName)
+       print(sqlQuery)
        cursor.execute(sqlQuery)
        result = cursor.fetchall()
        print(result)
@@ -122,8 +133,9 @@ def checkWhichMatches(testArray,wordArray):
            unmatch.append(a)
    return(matchset,unmatch)
 
+
 '''
-Get the various bigrams that can be formed from the text..match them with the dictionary
+getBigramsDistributionFromText: Get the various bigrams that can be formed from the text..match them with the dictionary
 '''
 def getBigramsDistributionFromText(txt):
     bigrm = list(bigrams(txt.split()))
@@ -144,7 +156,7 @@ def getBigramsDistributionFromText(txt):
     return (sorted(dictResBi.items(), key=lambda x: x[1], reverse=True))
 
 '''
-Get all the unigrams...these are the words matching the dictioary
+getUnigramDistributionFromText: Get all the unigrams...these are the words matching the dictioary
 '''
 def getUnigramDistributionFromText(txt):
     arrUnigramWords=txt.split(" ")
@@ -163,7 +175,7 @@ def getUnigramDistributionFromText(txt):
     #return(arrUni)
 
 '''
-Get the trigrams ..match them with the dictionary. The chances of having trigrams is very low as the sentence are short
+getTrigramsDistributionFromText: Get the trigrams ..match them with the dictionary. The chances of having trigrams is very low as the sentence are short
 '''
 def getTrigramsDistributionFromText(txt):
     trigrm = list(trigrams(txt.split()))
@@ -183,13 +195,18 @@ def getTrigramsDistributionFromText(txt):
 
     return (sorted(dictResTri.items(), key=lambda x: x[1], reverse=True))
 
+
+
 '''
-You will perform tyhe basic cleanup ...numbers, punctuations, stopwords...Note that the stopwords should be quite
+getCleanedUpTextString: You will perform tyhe basic cleanup ...numbers, punctuations, stopwords...Note that the stopwords should be quite
 similar to what were used at the time of creating the dictionary otherwise some of the bigrams will not match
 '''
 def getCleanedUpTextString(txt):
     txt = txt.lower()
     original = txt
+    #first remove the code FWA-P-201A in the strings and may be we can store the stuff as well
+    txt = re.sub('[a-zA-Z0-9]+-[0-9A-Za-z]+-[0-9a-zA-Z]+', '', txt)
+
     txt = re.sub("[^a-zA-Z]", " ", txt)
     txtWithPunctuationRemoved = txt
     arrtxt = txt.split(" ")
@@ -201,6 +218,10 @@ def getCleanedUpTextString(txt):
     return(original,finalString)
 
 
+
+''''
+getTotalDistribution: Get the final count of the various Ngrams in the corpus. So what is the final frequency for the bigram words,, trigram words
+'''
 def getTotalDistribution(ngramArray,finalCountDict):
     for nn in ngramArray:
         if nn[0] in countNgrams:
@@ -211,6 +232,9 @@ def getTotalDistribution(ngramArray,finalCountDict):
     return(finalCountDict)
 
 
+'''
+drawFreqDistribution: Draws the frequecny distribution in the form of a bar graph
+'''
 def drawFreqDistribution(sortedCountNGrams):
     import numpy as np
     import matplotlib.pyplot as plt
@@ -230,17 +254,19 @@ def drawFreqDistribution(sortedCountNGrams):
     ax.set_yticks(ind + width)
     ax.set_yticklabels(labels=labelArr)
 
+    for rect in winners:
+        # print(rect)
+        width_rect = int(rect.get_width())
+        # print(width_rect)
+        hcap = str(width_rect)
+        ax.text(width_rect + 2, rect.get_y() - 0.25, hcap, ha='center', va='bottom', rotation="horizontal")
+
+    return(labelArr)
+
 
 '''
-We need to make sure that if the constituent words of bigram are present in unigram then unigram will be discarded
-similarly if the words in trigram are present in the unigram then they are to be removed
-also if bigram is a subset of trigram then it will not be counted
-
+findEffectiveBigrams: if the words of bigram are present in the trigram then the bigram needs to be discarded
 '''
-# def findEffectiveNgrams(trigramArr,bigramArr,unigramArr):
-#     ##do something
-
-
 def findEffectiveBigrams(bigramArr,TrigramArr):
     finalbb = []
     for bb in bigramArr:
@@ -262,6 +288,21 @@ def findEffectiveBigrams(bigramArr,TrigramArr):
 
     return(finalbb)
 
+
+'''
+removeUndesiredUnigrams: This function aims at removing some of the undesired unigrams like change, clear, new etc
+these words might be used in the bigrams so they are not stop words, but as unigrams they are noise
+'''
+def removeUndesiredUnigrams(unigramArr):
+    finArr=[]
+    for uu in unigramArr:
+        if uu in arrUndesiredWords:
+            continue
+        else:
+            finArr.append(uu)
+    return(finArr)
+
+
 '''
 Main function:
 Read the workorders from the database
@@ -273,7 +314,9 @@ and store them into a file for further analysis
 import json
 fp = open(prefixpath+"cognitiveOutput.txt", "w")
 outputResult=[]
-result=getData("Pump")
+#give the eqquipment class and the site
+result=getData("Motor","Trienergy")
+
 #count the number of times each word has come...this way we can give a distribution and may be that is helpful
 countNgrams={}
 for rr in result:
@@ -287,9 +330,12 @@ for rr in result:
     constituentNGramWords=[]
 
     uniArr=getUnigramDistributionFromText(cleanedUpTxt)
-    print(uniArr)
+    #print(uniArr)
     for uu in uniArr:
         unigramWords.append(uu[0])
+        if(uu[0]=="change"):
+            print("change",originalTxt)
+            print("\n")
 
     #countNgrams=getTotalDistribution(uniArr,countNgrams)
 
@@ -315,11 +361,13 @@ for rr in result:
 
     finalbb=findEffectiveBigrams(biArr,triArr)
 
+    #finalbb=biArr
     countNgrams = getTotalDistribution(finalbb, countNgrams)
     countNgrams = getTotalDistribution(triArr, countNgrams)
 
     #before adding the number of unigrams we need to findout how many are not covered by the bigrams,trigrams
     finUnigrams = list(set(unigramWords).difference(constituentNGramWords))
+    finUnigrams=removeUndesiredUnigrams(finUnigrams)
     #now add these unigrams frequeccy
     for uu in uniArr:
         if uu[0] in finUnigrams:
@@ -328,53 +376,30 @@ for rr in result:
             else:
                 countNgrams[uu[0]] = float(1)
 
+
+
     stringifiedTrigram = ', '.join(tt[0] for tt in triArr)
     stringifiedBigram=', '.join(bb[0] for bb in finalbb)
     stringifiedUnigram=', '.join(uu for uu in finUnigrams)
 
-
-    #effectiveNgrams=findEffectiveNgrams(triArr,biArr,uniArr)
-
-
-
     print(originalTxt, "....",stringifiedTrigram,"...",stringifiedBigram, "...", stringifiedUnigram)
     outputResult.append({"original":originalTxt,"trigrams":stringifiedTrigram,"bigrams":stringifiedBigram,"unigrams":stringifiedUnigram})
-    # fp.write(originalTxt)
-    # fp.write("....")
-    # fp.write(stringifiedTrigram)
-    # fp.write("...")
-    # fp.write(stringifiedBigram)
-    # fp.write("...")
-    # fp.write(stringifiedUnigram)
-    # fp.write("\n")
-
-    #pp = pd.DataFrame(list(zip(unique, counts)), columns=['num of occurence', 'freq'])
 
     #print(original)
 sortedCountNGrams=sorted(countNgrams.items(), key=lambda x: x[1], reverse=True)
 print(sortedCountNGrams[0:50])
-
+#print(sortedCountNGrams[0:100])
+toplabels=drawFreqDistribution(sortedCountNGrams)
 fp.write(json.dumps(outputResult))
+fp.write("..........\n")
+fp.write(json.dumps(toplabels))
 fp.close()
 
-#print(sortedCountNGrams[0:100])
-drawFreqDistribution(sortedCountNGrams)
-
-
-# def autolabel(rects):
-#     # attach some text labels
-#     for rect in rects:
-#         height = rect.get_height()
-#         hcap = "$"+str(height)+"M"
-#         ax.text(rect.get_x()+rect.get_width()/2., height, hcap,ha='center', va='bottom', rotation="vertical")
-
-
-
-#autolabel(winners)
 
 
 
 
+#####################################################################################
 
 
 '''
@@ -399,6 +424,18 @@ We need to check whihc words are coming after not...they may be interesting
 
 
 #for rr in result[1:10]
+import re
+for rr in result[1:100]:
+    #print(rr[0])
+    line=rr[0]
+    res=re.sub('[a-zA-Z0-9]+-[0-9A-Za-z]+-[0-9a-zA-Z]+','', line)
+    print(line,res)
+
+line=result[100][0]
+print(line)
+re.findall('[a-zA-Z0-9]+-[A-Z]-[0-9a-zA-Z]+',line)
+
+
 
 originalTxt, cleanedUpTxt=getCleanedUpTextString(result[7][0])
 
@@ -473,3 +510,22 @@ for uu in uniArr:
 
 
 #getTotalDistribution(triArr, finalCountDict)
+
+import numpy as np
+import matplotlib.pyplot as plt
+labelArr = []
+freqArr = []
+
+for obj in sortedCountNGrams[0:30]:
+    labelArr.append(obj[0])
+    freqArr.append(int(obj[1]))
+
+N = len(labelArr)
+ind = np.arange(N)  # the x locations for the groups
+width = 0.50  # the width of the bars
+
+fig, ax = plt.subplots()
+winners = ax.barh(ind, freqArr, width, color='green')
+ax.set_yticks(ind + width)
+ax.set_yticklabels(labels=labelArr)
+
