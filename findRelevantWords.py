@@ -23,7 +23,7 @@ prefixpath="/Users/305015992/pythonProjects/assetAnswer/"
 '''
 read the unigram file and create a dictioanry
 '''
-unigramFile=prefixpath+"unigramWO.csv"
+unigramFile=prefixpath+"unigrams_all.csv"
 dictUnigrams={}
 for ll in open(unigramFile):
     llArr=ll.split(",")
@@ -54,7 +54,7 @@ print(arrUndesiredWords)
 '''
 read the bigrams with their frequecny
 '''
-bigramFile=prefixpath+"bigrams.csv"
+bigramFile=prefixpath+"bigrams_all.csv"
 dictBigrams={}
 for ll in open(bigramFile):
     llArr=ll.split(",")
@@ -68,7 +68,7 @@ print(dictBigrams)
 '''
 read the trigrams with their frequecy
 '''
-trigramFile=prefixpath+"trigramsWO.csv"
+trigramFile=prefixpath+"trigrams_all.csv"
 dictTrigrams={}
 for ll in open(trigramFile):
     llArr=ll.split(",")
@@ -101,15 +101,20 @@ print(stops)
 '''
 getData: Use the database to fetch the Workorders that you want to analyze. Currently they are based on the equipment type and the site
 '''
-def getData(equipmentType,siteName):
+def getData(equipmentType,siteName,isDistinct=True):
 
     cnx = mysql.connector.connect(user='root', password='root',host='localhost',port='3306',database='assetanswers')
 
     result=[]
     try:
        cursor = cnx.cursor()
-       sqlQuery="SELECT Distinct(WH_ORIG_RQST_DESC_C) from workorders_assets where EQ_EQ_CLASS_C='%s' and WH_SITE_C='%s'" \
+       #order by rand() LIMIT 10000
+       if(isDistinct==True):
+            sqlQuery="SELECT Distinct(WH_ORIG_RQST_DESC_C) from workorders_assets where EQ_EQ_CLASS_C='%s' and WH_SITE_C='%s' " \
                 %(equipmentType,siteName)
+       else:
+           sqlQuery = "SELECT WH_ORIG_RQST_DESC_C from workorders_assets where EQ_EQ_CLASS_C='%s' and WH_SITE_C='%s' and WH_EVENT_TYP_C='Repair'" \
+                      % (equipmentType, siteName)
        print(sqlQuery)
        cursor.execute(sqlQuery)
        result = cursor.fetchall()
@@ -130,6 +135,7 @@ def checkWhichMatches(testArray,wordArray):
        if a in wordArray:
            matchset.append(a)
        else:
+           matchset.append(a)
            unmatch.append(a)
    return(matchset,unmatch)
 
@@ -207,7 +213,10 @@ def getCleanedUpTextString(txt):
     #first remove the code FWA-P-201A in the strings and may be we can store the stuff as well
     txt = re.sub('[a-zA-Z0-9]+-[0-9A-Za-z]+-[0-9a-zA-Z]+', '', txt)
 
+    #remove every thing other than alphabets
     txt = re.sub("[^a-zA-Z]", " ", txt)
+    #replace check/record to check
+    #txt=txt.replace("check record","check")
     txtWithPunctuationRemoved = txt
     arrtxt = txt.split(" ")
     # remove stop words
@@ -224,7 +233,7 @@ getTotalDistribution: Get the final count of the various Ngrams in the corpus. S
 '''
 def getTotalDistribution(ngramArray,finalCountDict):
     for nn in ngramArray:
-        if nn[0] in countNgrams:
+        if nn[0] in finalCountDict:
             finalCountDict[nn[0]] += float(1)
         else:
             finalCountDict[nn[0]] = float(1)
@@ -235,13 +244,13 @@ def getTotalDistribution(ngramArray,finalCountDict):
 '''
 drawFreqDistribution: Draws the frequecny distribution in the form of a bar graph
 '''
-def drawFreqDistribution(sortedCountNGrams):
+def drawFreqDistribution(sortedCountNGrams,N=30):
     import numpy as np
     import matplotlib.pyplot as plt
     labelArr = []
     freqArr = []
 
-    for obj in sortedCountNGrams[0:30]:
+    for obj in sortedCountNGrams[0:N]:
         labelArr.append(obj[0])
         freqArr.append(int(obj[1]))
 
@@ -315,7 +324,7 @@ import json
 fp = open(prefixpath+"cognitiveOutput.txt", "w")
 outputResult=[]
 #give the eqquipment class and the site
-result=getData("Motor","Trienergy")
+result=getData("Pump","Trienergy",isDistinct=False)
 
 #count the number of times each word has come...this way we can give a distribution and may be that is helpful
 countNgrams={}
@@ -386,33 +395,140 @@ for rr in result:
     outputResult.append({"original":originalTxt,"trigrams":stringifiedTrigram,"bigrams":stringifiedBigram,"unigrams":stringifiedUnigram})
 
     #print(original)
+
+print(countNgrams)
 sortedCountNGrams=sorted(countNgrams.items(), key=lambda x: x[1], reverse=True)
 print(sortedCountNGrams[0:50])
 #print(sortedCountNGrams[0:100])
-toplabels=drawFreqDistribution(sortedCountNGrams)
+toplabels=drawFreqDistribution(sortedCountNGrams,N=100)
 fp.write(json.dumps(outputResult))
 fp.write("..........\n")
 fp.write(json.dumps(toplabels))
 fp.close()
 
+for tt in sortedCountNGrams:
+    if(tt[1]>10):
+        print(tt[0],',',tt[1])
 
 
 
 
+##test
+def findNextCounts(arrWords,countNextWords,val):
+    for ii in arrWords:
+        if(ii in countNextWords):
+            countNextWords[ii]+=float(1)/float(val)
+        else:
+            countNextWords[ii]=float(1)/float(val)
+
+    return(countNextWords)
+
+
+
+
+def getPossibleNextWords(result,initialString,initalVal):
+    countNextWords={}
+    for rr in result:
+        originalTxt, cleanedUpTxt = getCleanedUpTextString(rr[0])
+        originalTxt = re.sub('[a-zA-Z0-9]+-[0-9A-Za-z]+-[0-9a-zA-Z]+', '', originalTxt)
+        #
+        # # remove every thing other than alphabets
+        originalTxt = re.sub("[^a-zA-Z]",' ', originalTxt)
+        #remove extra two spaces
+        originalTxt=originalTxt.replace('  ',' ')
+
+        matchString=initialString
+        #handle the case when check/record is present
+        words=originalTxt.partition(matchString)
+        #print(words)
+        if(len(words[2])>1):
+            wordsafter=words[2].split()
+            #print("wordsafter length",len(wordsafter))
+            if (len(wordsafter) > 2):
+                # check 3 words first, second, first&second
+                countNextWords = findNextCounts([wordsafter[0], wordsafter[1], wordsafter[0] + ' ' + wordsafter[1],
+                                                 wordsafter[0] + ' ' + wordsafter[1]+' '+wordsafter[2]],
+                                                countNextWords, initalVal)
+
+            if(len(wordsafter)>1 and len(wordsafter)<3):
+                #check 3 words first, second, first&second
+                countNextWords=findNextCounts([wordsafter[0],wordsafter[1],wordsafter[0]+' '+wordsafter[1]],countNextWords,initalVal)
+            if(len(wordsafter)==1):
+                countNextWords=findNextCounts([wordsafter[0]],countNextWords,initalVal)
+
+            # print(wordsafter)
+    output=sorted(countNextWords.items(), key=lambda x: x[1], reverse=True)
+
+    return(output)
+
+
+#getPossibleNextWords(result,"check record battery",float(188))
+
+
+finaloutput={}
+for tt in sortedCountNGrams[0:50]:
+    inputString=tt[0]
+    output=getPossibleNextWords(result,inputString,tt[1])
+    # remove the tuples which have percentage less than 0.6
+    filteredOutput=[]
+    for kk in output[0:4]:
+        if (kk[1] > 0.6):
+            filteredOutput.append(kk)
+
+    # tokenisedMatchString = inputString.split()
+    # if ((tokenisedMatchString[0] == 'check') and (tokenisedMatchString[1] == 'record')):
+    #     inputString =
+
+    inputString=inputString.replace("check record","check")
+    print(inputString,"(",tt[1],")=>",json.dumps(filteredOutput))
+    finaloutput[inputString]={"original":tt,"final":json.dumps(output[0:4])}
+
+print(finaloutput)
+
+
+###
+#check if bigram has a preopsition and a word then most likely you should consider it
+#check if the percentage is <60 you should ignore
+#
+###
+
+
+import nltk
+text=nltk.word_tokenize("insert oil containter")
+print(nltk.pos_tag(text))
+
+
+getPossibleNextWords(result,"clean work area")
+print(finaloutput)
+txt="wordsafter are instepecjj"
+gg=txt.split()
+gg[0]
 #####################################################################################
-
-
 '''
-SOme thoughts
 
-If we just create a frequency map of the various keywords that we are getting on mixer it gives a pretty good picture of
-what are the key issues that are going on....I think I will try to integrate the word cloud creation code so that generate
-the cloud for each equipment type
+Some observations as on 13-march:
+If I am using the Ngrams created using all the cases . and then apply them all the Pump cases fro the trienergy versus I do 10000
+random cases the frequency disrtribution is almost same which signifies that I am taking a good sample and and the sample is
+representive of the actual distributions
+
+This distribution is different from if you do DIstinct().
+
+The word disrtibution is different when I have a smaller list of the Ngram (basically formed while taking only Dictinct WO)
+
+So we have 4 scenarios
+1. all WO + large Ngram
+2. sample WO + large Ngram
+3. distinct Wo + large Ngram
+4. All WO + small Ngram
+5. Distinct WO + small Ngram
+
+
+1 & 2 matches
+4 & 5 are different
 
 
 
 
-We need to check whihc words are coming after not...they may be interesting
 '''
 
 
@@ -529,3 +645,12 @@ winners = ax.barh(ind, freqArr, width, color='green')
 ax.set_yticks(ind + width)
 ax.set_yticklabels(labels=labelArr)
 
+
+'''
+I shoudld create the bigrams on the basis of the prob of occurence of the next word
+if the prob is very high that the two words come always together then even later when we are finaliing the results
+we can replace the unigram to bigrams
+e.g drain is drain point most common than drain
+
+
+'''
