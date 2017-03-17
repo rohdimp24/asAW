@@ -9,7 +9,7 @@ import csv
 from nltk.corpus import stopwords
 import re
 import mysql.connector
-
+from collections import OrderedDict
 from nltk.stem.porter import PorterStemmer
 stemmer = PorterStemmer()
 
@@ -126,7 +126,7 @@ def getData(equipmentType,siteName,isDistinct=True):
     result=[]
     try:
        cursor = cnx.cursor()
-       sqlQuery = "SELECT WO_Long_Desc FROM TrienergyWO LIMIT 100"
+       sqlQuery = "SELECT WO_Long_Desc FROM TrienergyWO LIMIT 1000"
        print(sqlQuery)
        cursor.execute(sqlQuery)
        result = cursor.fetchall()
@@ -215,6 +215,7 @@ def getTrigramsDistributionFromText(txt):
 
 
 def getReplacedWithAssets(txt):
+   # print(txt)
     for aa in assets:
         txt=txt.replace(aa,assets[aa])
 
@@ -235,6 +236,7 @@ def getCleanedUpTextString(txt,replaceAssets=True,removeStopwords=True):
 
     #remove every thing other than alphabets
     txt = re.sub("[^a-zA-Z]", " ", txt)
+    #txt=re.sub('[0-9]+',' ',txt)
 
     if(replaceAssets==True):
         txt=getReplacedWithAssets(txt)
@@ -261,10 +263,10 @@ getTotalDistribution: Get the final count of the various Ngrams in the corpus. S
 '''
 def getTotalDistribution(ngramArray,finalCountDict):
     for nn in ngramArray:
-        if nn[0] in finalCountDict:
-            finalCountDict[nn[0]] += float(1)
+        if nn in finalCountDict:
+            finalCountDict[nn] += float(1)
         else:
-            finalCountDict[nn[0]] = float(1)
+            finalCountDict[nn] = float(1)
 
     return(finalCountDict)
 
@@ -304,7 +306,7 @@ def drawFreqDistribution(sortedCountNGrams,N=30):
 '''
 findEffectiveBigrams: if the words of bigram are present in the trigram then the bigram needs to be discarded
 '''
-def findEffectiveBigrams(bigramArr,TrigramArr):
+def findEffectiveBigrams_old(bigramArr, TrigramArr):
     finalbb = []
     for bb in bigramArr:
         initList = set(bb[0].split(' '))
@@ -325,22 +327,86 @@ def findEffectiveBigrams(bigramArr,TrigramArr):
 
     return(finalbb)
 
-
-
-#we need to work on this ..
-def removeOverlappingTrigramsWithHighFreq(TrigramArr):
-    print(TrigramArr)
-    finaltri=[]
-    for tri in TrigramArr:
-        initList=tri[0].split(' ')
+def findEffectiveBigrams(bigramArr, TrigramArr):
+    #print("bigram",bigramArr)
+    #print("trigram",TrigramArr)
+    finalbb = []
+    for bb in bigramArr:
+        initList = set(bb.split(' '))
+        # print("bi:", initList)
         flag = 1
         for tt in TrigramArr:
-            trList=tt[0].split(' ')
-            if((initList[1]==trList[0] and initList[2]==trList[1]) or (initList[2]==trList[0])):
-                print(trList,initList)
-                if(dictTrigrams[tt[0]]>=dictTrigrams[tri[0]]):
-                    finaltri.append(tt)
-    return(set(finaltri))
+            trList = set(tt.split(' '))
+            # print("tri:", tt[0])
+            diffLst = (initList.difference(trList))
+            # print(diffLst, len(diffLst))
+            if (len(diffLst) == 0):
+                # print("sub:", bb)
+                flag = 0
+                # break
+                # print(bb[0])
+        if (flag == 1):
+            finalbb.append(bb)
+
+    return(finalbb)
+
+'''
+This function takes an array and remove the elements which have stopwords in case of ngram
+The return is an array
+'''
+def filterOutStopWords(arrList):
+    #print(arrList)
+    finalarr=[]
+    for arListItem in arrList:
+        arListItemArr=set(arListItem.split())
+        if(len(arListItemArr.difference(stops))==0):
+            finalarr.append(arListItem)
+    #print(finalarr)
+    return(finalarr)
+
+
+'''
+In this case the check is done if the ngram contains a stopword
+'''
+def checkIfNgramContainsStopWord(arrList):
+    for arrListItem in arrList.split():
+        if(arrListItem in stops):
+           return(True)
+    return(False)
+
+
+def mergeOverlappingTrigramsStrings(TrigramArr, originalTxt):
+    #sprint(TrigramArr)
+    finaltri=[]
+    itemsToRemove=[]
+    if(len(TrigramArr)<2):
+        return(TrigramArr)
+
+    for tr1 in TrigramArr:
+        tr1Words=tr1.split()
+        pos1=originalTxt.find(tr1)
+        for tr2 in TrigramArr:
+            tr2Words=tr2.split()
+            pos2=originalTxt.find(tr2)
+            #print("pos1",pos1,"pos2",pos2,"tr1",tr1,"tr2",tr2)
+            if(pos1<pos2 and (pos2-pos1)==(len(tr1Words[0])+1)):
+                if (tr1Words[1] == tr2Words[0] and tr1Words[2] == tr2Words[1]):
+                    print("trirgam merges",tr1,tr2)
+                    newString = tr1 + " " + tr2Words[2]
+                    finaltri.append(newString)
+                    itemsToRemove.append(tr1)
+                    itemsToRemove.append(tr2)
+            else:
+                finaltri.append(tr2)
+
+
+    diffList=set(finaltri).difference(set(itemsToRemove))
+    return(list(diffList))
+
+
+'''TODO:
+We need to write the method for the bigrams also . sos if they are overlapping merge them to form a trirgams
+'''
 
 
 '''
@@ -368,94 +434,99 @@ and store them into a file for further analysis
 import json
 fp = open(prefixpath+"cognitiveOutput2.txt", "w")
 outputResult=[]
+tempCasesDict={}
 #give the eqquipment class and the site
 result=getData("Pump","Trienergy",isDistinct=False)
-
 #count the number of times each word has come...this way we can give a distribution and may be that is helpful
 countNgrams={}
-for rr in result:
-    originalTxt, cleanedUpTxt=getCleanedUpTextString(rr[0],True,False)
+for rr in result[0:200]:
+    originalTxt=rr[0]
+    #find the sentences in the text which in simple terms is breaking it on .
+    originalTxtArr=originalTxt.split('.')
 
-    #stemming
-   # stemmed = [stemmer.stem(ww) for ww in words]
-   # stemmed=' '.join(stemmed)
-    #get the unigrams and choose the top 3
     unigramWords=[]
     constituentNGramWords=[]
+    unigramPerSentences=[]
+    bigramPerSentences=[]
+    trigramPerSentences=[]
+    for sent in originalTxtArr:
+        sent, cleanedUpTxt = getCleanedUpTextString(sent, True, False)
+       # print(cleanedUpTxt)
+        uniArr=getUnigramDistributionFromText(cleanedUpTxt)
+        #print(uniArr)
+        for uu in uniArr:
+            unigramWords.append(uu[0])
+            unigramPerSentences.append(uu[0])
 
-    uniArr=getUnigramDistributionFromText(cleanedUpTxt)
-    #print(uniArr)
-    for uu in uniArr:
-        unigramWords.append(uu[0])
-        # if(uu[0]=="change"):
-        #     print("change",originalTxt)
-        #     print("\n")
+        #get the bigrams and choose the top 3
+        biArr=getBigramsDistributionFromText(cleanedUpTxt)
+        biLen=len(biArr)
+        for bb in biArr:
+            bigramPerSentences.append((bb[0]))
+            # bigramWords.append(bb[0])
+            for word in bb[0].split(' '):
+                constituentNGramWords.append(word)
 
-    #countNgrams=getTotalDistribution(uniArr,countNgrams)
+       #get the trigrams and choose the top 3
+        triArr = getTrigramsDistributionFromText(cleanedUpTxt)
+        triLen = len(triArr)
+        for tt in triArr:
+            trigramPerSentences.append(tt[0])
+            # trigramWords.append(tt[0])
+            for word in tt[0].split(' '):
+                constituentNGramWords.append(word)
 
-    #get the bigrams and choose the top 3
-    biArr=getBigramsDistributionFromText(cleanedUpTxt)
-    biLen=len(biArr)
-    for bb in biArr:
-        # bigramWords.append(bb[0])
-        for word in bb[0].split(' '):
-            constituentNGramWords.append(word)
+    #print("before",bigramPerSentences)
+    finalbb=findEffectiveBigrams(bigramPerSentences, trigramPerSentences)
+    #print("after",finalbb)
 
-
-    #countNgrams = getTotalDistribution(biArr, countNgrams)
-
-    #get the trigrams and choose the top 3
-    triArr = getTrigramsDistributionFromText(cleanedUpTxt)
-    triLen = len(triArr)
-    for tt in triArr:
-        # trigramWords.append(tt[0])
-        for word in tt[0].split(' '):
-            constituentNGramWords.append(word)
-
-    finalbb=findEffectiveBigrams(biArr,triArr)
-
-
+    #finalbb=filterOutStopWords(finalbb)
+    # trigramPerSentences=filterOutStopWords(trigramPerSentences)
+    # constituentNGramWords=filterOutStopWords(constituentNGramWords)
+    # unigramPerSentences=filterOutStopWords(unigramPerSentences)
+    # #print("before",trigramPerSentences)
+    trigramPerSentences=mergeOverlappingTrigramsStrings(trigramPerSentences, originalTxt.lower())
+    #print("after", trigramPerSentences)
     #finalbb=biArr
     countNgrams = getTotalDistribution(finalbb, countNgrams)
 
-
-
-    countNgrams = getTotalDistribution(triArr, countNgrams)
+    countNgrams = getTotalDistribution(trigramPerSentences, countNgrams)
 
     #before adding the number of unigrams we need to findout how many are not covered by the bigrams,trigrams
     finUnigrams = list(set(unigramWords).difference(constituentNGramWords))
     finUnigrams=removeUndesiredUnigrams(finUnigrams)
     #now add these unigrams frequeccy
-    for uu in uniArr:
-        if uu[0] in finUnigrams:
-            if uu[0] in countNgrams:
-                countNgrams[uu[0]] += float(1)
+    for uu in unigramPerSentences:
+        if uu in finUnigrams:
+            if uu in countNgrams:
+                countNgrams[uu] += float(1)
             else:
-                countNgrams[uu[0]] = float(1)
+                countNgrams[uu] = float(1)
 
 
-
-    #in case of trigram remove the trigram which overlaps and has a lower prob of occurence
-
-    #newTriArr=removeOverlappingTrigramsWithHighFreq(triArr)
-
-
-
-
-    stringifiedTrigram = ', '.join(tt[0].replace(' ','_') for tt in triArr)
+    stringifiedTrigram = ', '.join(tt.replace(' ','_') for tt in trigramPerSentences)
     #stringifiedNewTrigram = ', '.join(tt[0].replace(' ', '_') for tt in newTriArr)
-    stringifiedBigram=', '.join(bb[0].replace(' ','_') for bb in finalbb)
+    stringifiedBigram=', '.join(bb.replace(' ','_') for bb in list(set(finalbb)))
     stringifiedUnigram=', '.join(uu for uu in finUnigrams)
-
-    print(originalTxt, "~",stringifiedTrigram,"~",stringifiedBigram, "~", stringifiedUnigram)
+    originalTxt=originalTxt.lower()
+    print(originalTxt, "...tri=.",stringifiedTrigram,"...bi=.",stringifiedBigram, "..uni=..", stringifiedUnigram)
     outputResult.append({"original":originalTxt,"trigrams":stringifiedTrigram,"bigrams":stringifiedBigram,"unigrams":stringifiedUnigram})
     #printString=originalTxt+"..Tri="+stringifiedTrigram+"...Bi=",stringifiedBigram+"...Uni="+ stringifiedUnigram
+
+    #combine the Ngrams together in a single array
+    arrNgrams=trigramPerSentences+list(set(finalbb))+finUnigrams
+    # arrNgrams.append(trigramPerSentences)
+    # arrNgrams.append(list(set(finalbb)))
+    # arrNgrams.append(finUnigrams)
+
+
+    tempCasesDict[originalTxt]=arrNgrams
 
     #fp.write(printString)
     #fp.write("\n")
     #print(original)
-
 print(countNgrams)
+print(tempCasesDict)
 sortedCountNGrams=sorted(countNgrams.items(), key=lambda x: x[1], reverse=True)
 print(sortedCountNGrams[0:50])
 #print(sortedCountNGrams[0:100])
@@ -465,20 +536,23 @@ fp.write("..........\n")
 fp.write(json.dumps(toplabels))
 fp.close()
 
-for tt in sortedCountNGrams:
-    if(tt[1]>10):
-        print(tt[0],',',tt[1])
 
-
+#Prints List of all the keywords in the decreasing order
+for ngr in sortedCountNGrams:
+    if(ngr[1]>10):
+        print(ngr[0],',',ngr[1])
 
 
 ##test
-def findNextCounts(arrWords,countNextWords,val):
+#this give probability
+def findNextWordWithProbabilityScore(arrWords, countNextWords, val):
     for ii in arrWords:
-        if(ii in countNextWords):
-            countNextWords[ii]+=float(1)/float(val)
-        else:
-            countNextWords[ii]=float(1)/float(val)
+        #print(ii)
+        if(checkIfNgramContainsStopWord(ii)==False):
+            if(ii in countNextWords):
+                countNextWords[ii]+=float(1)/float(val)
+            else:
+                countNextWords[ii]=float(1)/float(val)
 
     return(countNextWords)
 
@@ -492,13 +566,15 @@ def findPrevCounts(arrWords,countPrevWords,val):
 
     return(countPrevWords)
 
-
-def findNextCountsForWords(arrWords,countNextWords):
+#this gives actual count
+def findNextWordWithRawCountScore(arrWords, countNextWords):
     for ii in arrWords:
-        if(ii in countNextWords):
-            countNextWords[ii]+=float(1)
-        else:
-            countNextWords[ii]=float(1)
+        print(ii)
+        if(ii not in stops):
+            if(ii in countNextWords):
+                countNextWords[ii]+=float(1)
+            else:
+                countNextWords[ii]=float(1)
 
     return(countNextWords)
 
@@ -526,16 +602,17 @@ def getPossibleNextWords(result,initialString,initalVal):
             wordsafter=words[2].split()
             #print("wordsafter length",len(wordsafter))
             if (len(wordsafter) > 2):
+
                 # check 3 words first, second, first&second
-                countNextWords = findNextCounts([wordsafter[0], wordsafter[1], wordsafter[0] + ' ' + wordsafter[1],
-                                                 wordsafter[0] + ' ' + wordsafter[1]+' '+wordsafter[2]],
-                                                countNextWords, initalVal)
+                countNextWords = findNextWordWithProbabilityScore([wordsafter[0], wordsafter[1], wordsafter[0] + ' ' + wordsafter[1],
+                                                                   wordsafter[0] + ' ' + wordsafter[1] +' ' + wordsafter[2]],
+                                                                  countNextWords, initalVal)
 
             if(len(wordsafter)>1 and len(wordsafter)<3):
                 #check 3 words first, second, first&second
-                countNextWords=findNextCounts([wordsafter[0],wordsafter[1],wordsafter[0]+' '+wordsafter[1]],countNextWords,initalVal)
+                countNextWords=findNextWordWithProbabilityScore([wordsafter[0], wordsafter[1], wordsafter[0] + ' ' + wordsafter[1]], countNextWords, initalVal)
             if(len(wordsafter)==1):
-                countNextWords=findNextCounts([wordsafter[0]],countNextWords,initalVal)
+                countNextWords=findNextWordWithProbabilityScore([wordsafter[0]], countNextWords, initalVal)
 
         # if(len(words[0])>1):
         #     wordsbefore=words[0].split()
@@ -579,14 +656,14 @@ def getPossibleNextWordsAfterPrticularWord(result,matchingWord):
             #print("wordsafter length",len(wordsafter))
             if (len(wordsafter) > 2):
                 # check 3 words first, second, first&second
-                countNextWords = findNextCountsForWords([wordsafter[0], wordsafter[1], wordsafter[0] + ' ' + wordsafter[1],
-                                                 wordsafter[0] + ' ' + wordsafter[1]+' '+wordsafter[2]],
-                                                countNextWords)
+                countNextWords = findNextWordWithRawCountScore([wordsafter[0], wordsafter[1], wordsafter[0] + ' ' + wordsafter[1],
+                                                                wordsafter[0] + ' ' + wordsafter[1] +' ' + wordsafter[2]],
+                                                               countNextWords)
             if(len(wordsafter)>1 and len(wordsafter)<3):
                 #check 3 words first, second, first&second
-                countNextWords=findNextCountsForWords([wordsafter[0],wordsafter[1],wordsafter[0]+' '+wordsafter[1]],countNextWords)
+                countNextWords=findNextWordWithRawCountScore([wordsafter[0], wordsafter[1], wordsafter[0] + ' ' + wordsafter[1]], countNextWords)
             if(len(wordsafter)==1):
-                countNextWords=findNextCountsForWords([wordsafter[0]],countNextWords)
+                countNextWords=findNextWordWithRawCountScore([wordsafter[0]], countNextWords)
 
         # if(len(words[0])>1):
         #     wordsbefore=words[0].split()
@@ -603,25 +680,13 @@ def getPossibleNextWordsAfterPrticularWord(result,matchingWord):
     return(outputNextWords)
 
 
-getPossibleNextWordsAfterPrticularWord(result,"check")
+#getPossibleNextWordsAfterPrticularWord(result,"check")
 
 
 
-#check what is the original look like
-# for rr in result:
-#     originalTxt, cleanedUpTxt = getCleanedUpTextString(rr[0])
-#     saveOriginal=originalTxt
-#     originalTxt = re.sub('[a-zA-Z0-9]+-[0-9A-Za-z]+-[0-9a-zA-Z]+', '', originalTxt)
-#     #
-#     # # remove every thing other than alphabets
-#     originalTxt = re.sub("[^a-zA-Z]", ' ', originalTxt)
-#     # remove extra two spaces
-#     originalTxt = originalTxt.replace('  ', ' ')
-#     # convert the asset names
-#     originalTxt = getReplacedWithAssets(originalTxt)
-#     print(saveOriginal,"....",originalTxt)
-
-
+'''
+Get the next words for all the key words found
+'''
 finaloutput={}
 for tt in sortedCountNGrams[0:250]:
     inputString=tt[0]
@@ -638,9 +703,56 @@ for tt in sortedCountNGrams[0:250]:
 
     inputString=inputString.replace("check record","check")
     print(inputString,"(",tt[1],")=>",json.dumps(filteredOutput))
-    finaloutput[inputString]={"original":tt,"final":json.dumps(output[0:4])}
+    finaloutput[inputString]=output[0:4]
 
 print(finaloutput)
+
+
+
+'''
+We want to now see if there are any keywords that can be exteded using the next word suggestions
+We will run thorugh all the cases and will capture the suggestions
+'''
+keys=list(finaloutput.keys())
+print(keys)
+newCasesDict={}
+for case in tempCasesDict:
+    arrwords=tempCasesDict[case]
+    print(case)
+    suggestions=[]
+    for word in arrwords:
+        suggestedWordName = ''
+        suggestedWordProb = 0.0
+        if word in keys:
+            print(word,"...",finaloutput[word])
+            #for the word that are there in the keys we need to see if the next word combination will be there in the
+            #original string
+            #get the next words
+            for w in finaloutput[word]:
+                newStr=word+" "+w[0]
+                if(case.find(newStr) >-1):
+                    if(len(suggestedWordName)==0):
+                        suggestedWordName=newStr
+                        suggestedWordProb=w[1]
+                        print("suggestedword init",suggestedWordName)
+                    else:
+                        if(suggestedWordProb<w[1] or len(suggestedWordName)<len(newStr)):
+                            suggestedWordName = newStr
+                            suggestedWordProb = w[1]
+                            print("suggestedword", suggestedWordName)
+            suggestions.append(suggestedWordName)
+    newCasesDict[case]={"orginal":arrwords,"suggested":list(set(suggestions))}
+
+    print("____________")
+
+print(newCasesDict)
+
+
+#ToDo:Now the suggested words should be checked as to how they can be accomodated in the original array
+
+
+
+
 
 
 ###
@@ -732,3 +844,4 @@ I guess our bigrams should be properly created to get better resulsts
 we just need to find out those guys.
 
 '''
+
