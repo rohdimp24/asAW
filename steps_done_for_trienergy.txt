@@ -1,0 +1,36 @@
+
+
+Here are the steps I have done for trienergy pump repair events
+
+1. from the excel sheet maximo/trienergy I copied the repair events which are like pu- and of type CM
+
+2.  There are two feilds one is description and the other is WO_DEsc. The description is the field that contains the name of  the asset while the WO_Desc is the WO description
+
+3. The asset descriptipm is useful in identifying the maintenable item from the WO field
+for e.e.g 1CAA-DRY-1A COMPRESSED AIR DRYER 1A is bascially COMPRESSED_AIR_DRYER
+
+4. We will take all the unique assets and then copy them into assets.txt file in the pythoncode\assetanswer\trienergyNgrams\assetNames.txt
+
+5. Now we will copy all the WO_Desc and store them into the database "TrienergyWOForNgrams"
+Note that we will do the normalization of the text using the trienegryDataCleanupAndStore.py
+-basically lower()
+-find the pattern of 1-1-1 and remove all of them
+-remove the digits
+-remove extra spaces
+-convert all the assets obtained from the excel sheet as compressed_air_dryer
+
+
+6.Also copy only the repair events for the pump into the databse table "TrienergyWO" (the norm field is not being used and can be removed from the table) using the trienegryDataCleanupAndStore.py
+
+7. Now using the python code createNGrams..just find the unigrams. store them in the textfile "unigrams_trienergy_R" and stor ethem in the table Ngrams. Note we will manually append the unigram file with all the unique asset names (with _)..this can be combined as well
+
+8.Now we need to use the R code NgramAnalysisForWO.rmd. ..in the section "finding bigrams and trigrams"..we will find the bigrams and trigrams using the entire data set of trieenergy (use the table TrienergyWOForNgrams)
+One importnat thing is that instead of checking if the individual words of the bigrams or trigrams not in stopwords we will check that they are part of unigrams
+
+9. Now once the unigrams, bigrams, trigrams have been generated we will use the python code findrelevantwords_trienergy_new to perform the analysis . note earlier I was using the findrelevenatwords_trienergy but that one is using the unigrams, bigrams, trigrams trained earlier using the workorder_assets table (NgramAnalysisForWo.Rmd had been used for this just that the data referenced was from different table)
+
+findrelevantwords_trienergy_new.py will get the distribution of the Ngrams which is what we want to show. Additionally the code is there get the next word usign the language model approach . I am using the language model concept of P(wn|Wn-1) so find what can be the next words given this word. this will help in frinding out more than trigrams. the approach worked in case of the finding the key things on the workorder_asset table (analyis using the workorder_asset table)
+
+11. Once all is done copy it in excel and then MANUALLY check which words make sense or not.
+
+
